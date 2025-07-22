@@ -62,11 +62,46 @@ class PredictionAIAgent:
         
         # 실제 LSTM 대신 간단한 가중 평균 + 트렌드 분석으로 시뮬레이션
         # 실제 구현시에는 TensorFlow, PyTorch 등을 사용합니다
-        self.weights = np.array([0.1, 0.15, 0.2, 0.25, 0.3])  # 최근 데이터에 더 높은 가중치
+        self.temporal_weights = np.array([0.1, 0.15, 0.2, 0.25, 0.3])  # 최근 데이터에 더 높은 가중치
+        
+        # 8개 네트워크 데이터에 대한 학습 가능한 가중치 (W_h) 초기화
+        self.feature_weights = np.random.uniform(0.05, 0.2, 8)  # [RTT, Queue, Loss, Bandwidth, Throughput, Jitter, CPU, Memory]
+        self.feature_weights = self.feature_weights / np.sum(self.feature_weights)  # 정규화
+        self.learning_rate = 0.01
+        self.target_history = deque(maxlen=10)  # 실제 관측값 저장용
         
     def update_history(self, network_data):
         """과거 데이터 히스토리에 새 데이터 추가"""
         self.data_history.append(network_data)
+        
+    def learn_feature_weights(self, current_data, actual_performance):
+        """
+        8개 네트워크 데이터에 대한 가중치를 간단한 경사하강법으로 학습
+        
+        Args:
+            current_data (list): 현재 네트워크 데이터 [8차원]
+            actual_performance (float): 실제 성능 지표 (지연시간 기준)
+        """
+        if len(self.data_history) < 2:
+            return
+            
+        # 현재 가중치로 예측값 계산
+        predicted_value = np.dot(self.feature_weights, current_data)
+        
+        # 오차 계산 (실제 성능과 예측값의 차이)
+        error = actual_performance - predicted_value
+        
+        # 경사하강법으로 가중치 업데이트
+        gradient = error * np.array(current_data)
+        self.feature_weights += self.learning_rate * gradient
+        
+        # 가중치 정규화 (합이 1이 되도록)
+        self.feature_weights = np.maximum(self.feature_weights, 0.01)  # 음수 방지
+        self.feature_weights = self.feature_weights / np.sum(self.feature_weights)
+        
+        # 학습 결과 출력 (가끔)
+        if len(self.data_history) % 10 == 0:
+            print(f"📚 가중치 학습: 오차={error:.3f}, 최대가중치={np.max(self.feature_weights):.3f}")
         
     def predict_network_state(self):
         """
@@ -78,11 +113,11 @@ class PredictionAIAgent:
         """
         if len(self.data_history) < 5:
             # 데이터가 부족할 때는 현재 데이터 기반으로 예측
-            current_data = list(self.data_history)[-1] if self.data_history else [10, 1000, 0.01, 0.5, 500, 2, 0.5, 0.6]
+            current_data = np.array(list(self.data_history)[-1]) if self.data_history else np.array([10, 1000, 0.01, 0.5, 500, 2, 0.5, 0.6])
         else:
             # 최근 5개 데이터의 가중 평균으로 트렌드 계산 (LSTM 시뮬레이션)
             recent_data = np.array(list(self.data_history)[-5:])
-            current_data = np.average(recent_data, axis=0, weights=self.weights)
+            current_data = np.average(recent_data, axis=0, weights=self.temporal_weights)
         
         # 트렌드 분석 (최근 데이터의 변화율)
         if len(self.data_history) >= 2:
@@ -90,9 +125,13 @@ class PredictionAIAgent:
         else:
             trend = np.zeros(8)
         
-        # 미래 30초 예측 (현재 상태 + 트렌드 + 불확실성)
+        # 학습된 가중치를 사용하여 미래 상태 예측 (W_h 적용)
+        weighted_current = np.dot(self.feature_weights, current_data) 
+        
+        # 미래 30초 예측 (가중치 적용된 현재 상태 + 트렌드 + 불확실성)
         uncertainty_factor = np.random.normal(0, 0.1, 8)  # 예측 불확실성
-        future_prediction = current_data + trend * 0.5 + uncertainty_factor
+        base_prediction = current_data * weighted_current / np.mean(current_data)  # 가중치 반영
+        future_prediction = base_prediction + trend * 0.5 + uncertainty_factor
         
         # 예측 결과를 딕셔너리로 정리
         prediction_result = {
@@ -447,8 +486,14 @@ class AgenticAINetworkSystem:
               f"큐={network_data[1]:.0f}, 손실={network_data[2]:.3f}%, "
               f"대역폭={network_data[3]:.2f}")
         
-        # 2단계: 예측 AI 처리
+        # 2단계: 예측 AI 처리 (학습 포함)
         self.prediction_ai.update_history(network_data)
+        
+        # 가중치 학습 수행 (실제 RTT를 기준으로)
+        if len(self.prediction_ai.data_history) > 1:
+            actual_delay = network_data[0]  # 실제 RTT
+            self.prediction_ai.learn_feature_weights(network_data, actual_delay)
+        
         prediction_result = self.prediction_ai.predict_network_state()
         
         # 3단계: 다중 AI 에이전트 병렬 처리
