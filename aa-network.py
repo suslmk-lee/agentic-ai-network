@@ -55,6 +55,9 @@ class PredictionAIAgent:
     과거 데이터를 학습하여 미래 30초간의 네트워크 상태를 예측합니다.
     """
     
+    # 데이터가 전혀 없을 때 사용할 기본 네트워크 상태값 (방어적 프로그래밍)
+    DEFAULT_NETWORK_STATE = np.array([10, 1000, 0.01, 0.5, 500, 2, 0.5, 0.6])
+
     def __init__(self, window_size=50):
         print("🤖 예측 AI 에이전트 초기화...")
         self.window_size = window_size  # 과거 몇 개의 데이터를 사용할지
@@ -85,17 +88,24 @@ class PredictionAIAgent:
         if len(self.data_history) < 2:
             return
             
-        # 현재 가중치로 예측값 계산
-        predicted_value = np.dot(self.feature_weights, current_data)
+        # 1. 예측(Prediction): 현재 가중치를 사용해 성능을 예측합니다.
+        # 예측값 = w1*x1 + w2*x2 + ... (선형 조합)
+        predicted_performance = np.dot(self.feature_weights, current_data)
         
-        # 오차 계산 (실제 성능과 예측값의 차이)
-        error = actual_performance - predicted_value
+        # 2. 오차 계산(Error Calculation): 실제 값과 예측 값의 차이를 계산합니다.
+        # 이 오차는 모델이 얼마나 잘못 예측했는지를 나타냅니다.
+        error = actual_performance - predicted_performance
         
-        # 경사하강법으로 가중치 업데이트
+        # 3. 경사 계산(Gradient Calculation): 오차를 줄이기 위해 각 가중치를 어느 방향으로
+        # 얼마나 조절해야 할지 계산합니다. (오차 * 입력 데이터)
         gradient = error * np.array(current_data)
+
+        # 4. 가중치 업데이트(Weight Update): 학습률(learning_rate)만큼 가중치를 조정합니다.
+        # 이것이 바로 '학습' 과정입니다.
         self.feature_weights += self.learning_rate * gradient
         
-        # 가중치 정규화 (합이 1이 되도록)
+        # 5. 가중치 정규화(Normalization): 가중치의 합이 1이 되도록 만들어
+        # 각 피처의 상대적 중요도를 나타내도록 합니다.
         self.feature_weights = np.maximum(self.feature_weights, 0.01)  # 음수 방지
         self.feature_weights = self.feature_weights / np.sum(self.feature_weights)
         
@@ -111,9 +121,14 @@ class PredictionAIAgent:
         Returns:
             dict: 예측된 네트워크 상태 정보
         """
-        if len(self.data_history) < 5:
-            # 데이터가 부족할 때는 현재 데이터 기반으로 예측
-            current_data = np.array(list(self.data_history)[-1]) if self.data_history else np.array([10, 1000, 0.01, 0.5, 500, 2, 0.5, 0.6])
+        history_len = len(self.data_history)
+        
+        if history_len == 0:
+            # 방어적 코드: 비정상적인 호출 순서나 초기화 직후를 대비해 기본값 사용
+            current_data = self.DEFAULT_NETWORK_STATE
+        elif history_len < 5:
+            # 데이터가 1~4개일 때는 수집된 데이터의 단순 평균으로 초기 안정성 확보
+            current_data = np.mean(np.array(list(self.data_history)), axis=0)
         else:
             # 최근 5개 데이터의 가중 평균으로 트렌드 계산 (LSTM 시뮬레이션)
             recent_data = np.array(list(self.data_history)[-5:])
