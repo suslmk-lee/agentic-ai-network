@@ -80,7 +80,6 @@ graph TD
 | **라우팅 AI 에이전트** | [📄 Routing-AI-Agent.md](./document/Routing-AI-Agent.md) | 강화학습 기반 최적 경로 선택 및 비용 계산 |
 | **로드밸런싱 AI 에이전트** | [📄 LoadBalancer-AI-Agent.md](./document/LoadBalancer-AI-Agent.md) | 동적 가중치 기반 트래픽 분산 및 서버 관리 |
 | **적응형 버퍼링 모듈** | [📄 Adaptive-Buffering.md](./document/Adaptive-Buffering.md) | 지연 예측 기반 동적 버퍼 크기 조정 |
-| **중앙 제어 모듈** | [📄 Central-Control.md](./document/Central-Control.md) | AI 에이전트 간 협업 조정 및 충돌 해결 |
 
 ## 6. 설치 및 실행
 
